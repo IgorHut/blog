@@ -1,0 +1,1031 @@
+---
+title: " This is just a filler, until I upload the real blog content :) - RMarkdown/ HTML skripta 'Masinsko ucenje u R-u' za moje studente na smeru Biomedicinsko inzenjerstvo, generacija 2016/ 2017. Materijal ce biti vremenom dopunjavan."
+author: "Igor Hut"
+date: "December 5, 2016"
+output:
+   html_document:
+    toc: yes
+    toc_depth: 4
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**This is just a filler, until I upload the real blog content :)**
+
+## Uvodna analiza podataka
+
+- `data.frame` - primarna forma za smestanje, analizu i manipulaciju podacima 
+- Uvoz podataka - licna preporuka `readr` (Hadley Wickham) 
+- Prvi korak - upoznavanje sa podacima
+  - Dimenzije - broj promenljivih (features) i opservacija (observations)
+  - Ciscenje i uredjivanje podataka - licna preporuka `dplyr` i `tidyr`(Hadley Wickham)
+  - Vizualizacija - `base` i `ggplot2` (Hadley Wickham)
+
+### Primer inicijalne provere i analize podataka
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+# broj promenljivih i broj opservacija
+str(iris)
+dim(iris)
+
+# Nekoliko prvih i poslednjih vrsta iz `iris` baze
+head(iris)
+tail(iris)
+
+# sumarna statistika za podatke u `iris` bazi
+summary(iris)
+
+plot(iris) #rezultat ce biti isti kao da smo upotrebili `pairs` funkciju iz `base` bilioteke
+
+ggplot(iris, aes( x = Sepal.Width, y = Sepal.Length, col = Species)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+
+```
+
+## Regresija, klasifikacija, klasterizacija - Uvod 
+
+#### Linearna regresija - uvodni primer 1
+
+```{r}
+
+# Ucitavamo "Wage" bazu iz "ISLR" paketa koja sadrzi neke opste podatke o radnicima u srednje-Atlanstkom regionu SAD i njihovim prihodima 
+library(ISLR)
+data("Wage")
+
+
+# Generisemo linearni model "lm_wage"
+
+lm_wage <- lm(wage ~ age, data = Wage)
+
+# ?lm - kako se funkcija "lm()" koristi
+
+# Definisemo data.frame sa novim vrednostima, koje nisu koriscenje za sintezu modela: "unseen" 
+unseen <- data.frame(age = 60)
+
+
+# Na osnovu modela "lm_wage" predvidjamo koliko iznosi plata 60-togodisnjeg radnika
+predict(lm_wage, unseen)
+```
+#### Regresija - uvodni primer 2
+
+```{r}
+
+# Broj pregleda vased LinkedIn profila u periodu od tri nedelje
+linkedin <- c(5, 7,  4,  9, 11, 10, 14, 17, 13, 11, 18, 17, 21, 21, 24, 23, 28, 35, 21, 27, 23)
+
+# Vektor koji sadrzi korespodentne dane: "dani"
+dani <- 1:21
+
+# Linearni model - broj pregleda po danima: linkedin_lm
+
+linkedin_lm <- lm(linkedin ~ dani)
+
+# Predvidjamo broj pregleda u sledeca tri dana: linkedin_pred
+buduci_dani <- data.frame(dani = 22:24)
+linkedin_pred <- predict(linkedin_lm, buduci_dani)
+
+# Plotujemo "istorijske" podatke i predvidjanje
+plot(linkedin ~ dani, xlim = c(1, 24))
+points(22:24, linkedin_pred, col = "red", pch = 16)
+```
+
+#### Klasifikacija - uvodni primer
+
+Primer neadekvatnog klasifikatora - krajnje overfitovanje podataka iz trening seta!
+
+```{r}
+library(readr)
+if (!"emails" %in% ls()) {
+    emails <- read_csv("data/emails_small.csv")
+}
+
+# Proveravamo strukturu seta podataka
+str(emails)
+
+# Definisemo funkciju spam_classifier()
+# 1 - spam, 0 - ham
+spam_classifier <- function(x){
+  prediction <- rep(NA,length(x))
+  prediction[x > 4] <- 1
+  prediction[x >= 3 & x <= 4] <- 0
+  prediction[x >= 2.2 & x < 3] <- 1
+  prediction[x >= 1.4 & x < 2.2] <- 0
+  prediction[x > 1.25 & x < 1.4] <- 1
+  prediction[x <= 1.25] <- 0
+  return(prediction)
+}
+
+# Primenimo nas klasifikator na kolonu "avg_capital_seq": "spam_pred"
+spam_pred <- spam_classifier(emails$avg_capital_seq)
+
+# Uporedimo "spam_pred" i  "emails$spam"
+spam_pred == emails$spam
+
+identical(spam_pred, as.numeric(emails$spam))
+```
+
+#### Klasterovanje - uvodni primer
+
+```{r}
+# Da bi smo obezbedili reproduktibilnost
+set.seed(1)
+
+# Proveravamo strukturu podataka
+str(iris)
+head(iris)
+
+# Delimo "iris" na dva seta: "my_iris" i "species""
+my_iris <- iris[-5]
+species <- iris$Species
+
+# Vrsimo k-means klasterizaciju za "my_iris", pretpostavljamo da postoje tri klase: "kmeans_iris"
+kmeans_iris <- kmeans(my_iris,3)
+
+# Poredimo dobijene klastere sa istinskim klasama (kategorijama)
+table(species, kmeans_iris$cluster)
+
+# Plotujemo "Petal.Width" vs "Petal.Length", bojimo po klasterima odn. postojecim kategorijama 
+par(mfrow = c(1,2))
+plot(Petal.Length ~ Petal.Width, data = my_iris, col = kmeans_iris$cluster)
+title("k-means - klasteri")
+plot(Petal.Length ~ Petal.Width, data = my_iris, col = iris$Species)
+title("Istinske klase")
+
+```
+
+## Ocena modela
+
+### Konfuziona matrica - Primeri
+
+- Objasnicemo ocenu klasifikacionog modela (u ovom slucaju korisceno je stablo odlucivanja - Decision Tree), na osnovu matrice konfuzije, koristeci za primer  `titanic` set podataka u kome se nalaze podaci o putnicima na Titaniku.
+    - Verzija koju cemo mi koristiti moze da se preuzme sa Kaggle stranice: [Titanic: Machine Learning from Disaster](https://www.kaggle.com/c/titanic/data)
+
+#### Primer 1:
+
+```{r}
+
+library(rpart)
+library(readr)
+library(purrr)
+
+# Import podataka
+if (!"titanic" %in% ls()) {
+    titanic <- read_csv("data/train.csv")
+}
+
+# Da obezbedimo reproduktibilnost
+set.seed(33)
+
+# Proveravamo strukturu data seta
+str(titanic)
+
+# Koristicemo samo kolone 'survived', 'pclass', 'sex' i 'age'
+titanic <- titanic[, c(1, 2, 4, 5)]
+str(titanic)
+
+# Prve tri promenlive bi evidentno trebalo da budu tretirane kao kategoricke promenljive - faktori
+titanic[-4] <- map(titanic[-4], as.factor)
+
+str(titanic)
+
+table(titanic$survived)
+
+# Odnos broja prezivelih i poginulih
+prop.table(table(titanic$survived))
+
+# Generisemo klasifikacioni model (drvo odlucivanja - decision tree) na osnovu datih podataka:
+tree <- rpart(survived ~ ., data = titanic, method = "class")
+
+# Koristimo predict() funkciju da predvidimo klase
+pred <- predict(tree, newdata = titanic, type = "class")
+
+
+# Konstruisemo konfuzionu matricu koristeci "table()":
+conf_t <- table(titanic$survived, pred)
+conf_t
+
+```
+
+#### Primer 2:
+```{r}
+#Isto to sa "pima" bazom podataka
+library(faraway)
+data(pima)
+
+head(pima)
+str(pima)
+
+# Da bismo obezbedili reproduktibilnost
+set.seed(33)
+
+# Generisemo klasifikacioni model (drvo odlucivanja - decision tree) na osnovu datih podataka:
+tree <- rpart(test ~ ., data = pima, method = "class")
+
+# Koristimo predict() funkciju da predvidimo klase
+pred <- predict(tree, newdata = pima, type = "class")
+
+
+# Konstruisemo konfuzionu matricu koristeci "table()":
+conf_p <- table(pima$test, pred)
+conf_p
+```
+#### Tacnost, preciznost, senzitivnost (recall), specificnost - Primer
+
+```{r}
+# Izracunajmo parametre za ocenu valjanosti modela "tree" za "titanic" skup podataka
+
+# Formiramo TP, FN, FP i TN na osnovu "conf_t"
+
+TP <- conf_t[2,2]
+
+FP <- conf_t[1,2]
+
+FN <- conf_t[2,1]
+
+TN <- conf_t[1,1]
+
+
+# Tacnost (Accuracy)
+acc <- (TP + TN)/sum(conf_t)
+acc
+
+
+# Preciznost (Precision)
+prec <- TP/(TP + FP)
+prec
+
+# Senzitivnost (Sensitivity, Recall)
+sens <- TP/(TP + FN)
+sens
+
+# Specificnost (Specificity)
+spec <- TN/(TN + FP)
+spec
+```
+
+#### Zadatak za vezbanje na casu:
+Izracunajte ove vrednosti za "tree" model generisan na osnovu "pima" seta podataka.
+
+### Kvalitet regresije
+
+- Srednja kvadratna greska
+- U nasem slucaju mozemo smatrati da se poklapa sa standardnom devijacijom
+- `sqrt((1/nrow(truth)) * sum( (truth$col - pred)^2))`
+
+#### Primer:
+
+```{r}
+# Koristicemo "pima" bazu
+
+# Struktura seta podataka
+str(pima)
+
+# Multivarijabilna linearna regresija - prostiji model (ukljucen manji broj promenljivih)
+fit_1 <- lm(diabetes ~ bmi + triceps + age + glucose, data = pima)
+
+# Predvidjanje na osnovu modela: pred_1
+pred_1 <- predict(fit_1)
+
+# RMSE na osnovu "pima$diabetes" (tacne vrednosti) i "pred_1" (vrednosti na osnovu modela fit_1)
+rmse_1 <- sqrt(1/nrow(pima)*sum((pima$diabetes - pred_1) ^ 2))
+
+rmse_1
+
+# Multivarijabilna linearna regresija - kompleksniji model (ukljucen veci broj promenljivih)
+fit_2 <- lm(diabetes ~ bmi + triceps + age + glucose + diastolic + insulin + pregnant, data = pima)
+
+# Predvidjanje na osnovu modela: pred_1
+pred_2 <- predict(fit_2)
+
+# RMSE na osnovu "pima$diabetes" (tacne vrednosti) i "pred_1" (vrednosti na osnovu modela fit_1)
+rmse_2 <- sqrt(1/nrow(pima)*sum((pima$diabetes - pred_2) ^ 2))
+
+rmse_2
+```
+
+### Procena valjanosti klasterizacije: WSS vs BSS
+
+```{r}
+# Da bi smo obezbedili reproduktibilnost
+set.seed(33)
+
+# Proveravamo strukturu podataka
+str(iris)
+head(iris)
+
+# Delimo "iris" na dva seta: "my_iris" i "species""
+my_iris <- iris[-5]
+species <- iris$Species
+
+# Vrsimo k-means klasterizaciju za "my_iris" uz pretpostavku da postoje tri klase: "kmeans_iris"
+kmeans_iris <- kmeans(my_iris,3)
+
+# Poredimo dobijene klastere sa istinskim klasama (kategorijama)
+table(species, kmeans_iris$cluster)
+
+# Plotujemo "Petal.Width" vs "Petal.Length", bojimo po klasterima odn. postojecim kategorijama 
+par(mfrow = c(1,2))
+plot(Petal.Length ~ Petal.Width, data = my_iris, col = kmeans_iris$cluster)
+title("k-means - klasteri")
+plot(Petal.Length ~ Petal.Width, data = my_iris, col = iris$Species)
+title("Istinske klase")
+
+kmeans_iris$tot.withinss/kmeans_iris$betweenss
+```
+
+### Trening set i test set 
+
+- Cilj implementacije algoritma **nadgledanog** ucenja jeste dobijanje "dovoljno" dobrog prediktivnog modela na osnovu raspolozivog seta podataka.  
+- Set podataka koji se koristi za formiranje modela - **trening set**
+- Set podatak koji se koristi za procenu valjanosti modela - **test set**
+- Trening set i test set ne smeju imati/deliti zajednicke elemente tj. opservacije
+- Samo testiranjem modela na podacima koji nisu korisceni za ucenje mozemo izvesti adekvatnu estimaciju ocena valjanosti modela - generalizacija.
+- Opste prihvacena praksa je da se rasploziv skup podataka podeli na sledeci nacin:
+    - Trening set 70% ili 75%
+    - Test set 30% ili 35%
+- Prilikom podele raspolozivog skupa podataka treba strogo voditi racuna da zastupljenost, odn. distribucija, klasa (ovo se odnosi na algoritme za klasifikaciju) bude slicna u trening i test setu
+    - ne bi smelo da se dogodi da jedan ili drugi set uopste ne sadrze ni jednu opservacuju koja pripada odredjenoj klasi
+- Dobra praksa je da se poredak opservacija randomizuje (slucajno odabrana permutacija) pre deljenja skupa podataka na trening i test set
+    - Ovo vazi i za klasifikaciju i za regresiju
+- Odabiranje (semplovanje) opservacija za trening i test set moze ponekad i znacajno uticati na procenjene vrednosti ocena valjanosti datog modela
+    - Da bi se ovaj efekat minimizovao koristi se **unakrsna validacija** (cross-validation)
+
+#### Primer
+
+```{r}
+# Koristicemo "titanic" set podataka formiran u jednom od prethodnih primera
+str(titanic)
+
+table(titanic$survived)
+
+# Odnos prezivelih i poginulih
+prop.table(table(titanic$survived))
+
+# Da bismo omogucili reproduktibilnost
+set.seed(33)
+
+# Prvo napravimo jednu slucajno odabranu permutaciju celog skupa podataka (dataset shuffle) 
+n <- nrow(titanic)
+shuffled <- titanic[sample(n),] #f-a 'sample' vrsi slucajno odabiranje elemenata zadatog vektora
+
+# Delimo skup podataka na trening i test set (70% i 30%)
+train_indicies <- 1:round(0.7 * n)
+train <- shuffled[train_indicies, ]
+test <- shuffled[-train_indicies, ]
+
+# Generisemo klasifikacioni model (drvo odlucivanja - decision tree) na osnovu trening seta:
+tree <- rpart(survived ~ ., data = train, method = "class")
+
+# Koristeci dobijeni model "tree" vrsimo klasifikaciju podataka iz test seta:
+pred <- predict(tree, newdata = test, type = "class")
+
+# Racunamo matricu konfuzije
+conf_t <- table(test$survived, pred)
+
+# Prikaz matrice konfuzije
+conf_t
+
+# Formiramo TP, FN, FP i TN na osnovu "conf_t"
+
+TP <- conf_t[2,2]
+
+FP <- conf_t[1,2]
+
+FN <- conf_t[2,1]
+
+TN <- conf_t[1,1]
+
+
+# Tacnost (Accuracy)
+acc <- (TP + TN)/sum(conf_t)
+acc
+
+
+# Preciznost (Precision)
+prec <- TP/(TP + FP)
+prec
+
+# Senzitivnost (Sensitivity, Recall)
+sens <- TP/(TP + FN)
+sens
+
+# Specificnost (Specificity)
+spec <- TN/(TN + FP)
+spec
+```
+
+#### Zadatak za vezbanje na casu:
+Ponovite pokazanu proceduru koristeci "pima" skup podataka.
+
+### Upotreba unakrsne validacije (cross-validation)
+
+**Radi demonstracije cemo rucno formirati algroritam koji koristi unakrsnu validaciju za procenu tacnosti modela:**
+
+```{r}
+# Da bismo obezbedili reproduktibilnost
+set.seed(33)
+
+# Koristicemo prethodno formirani "shuffled" skup podataka
+
+# Inicijalizujemo vektor accs - popunjavamo nulama
+accs <- rep(0,9)
+
+
+# Treniramo model koristeci kros-validacione intervale vrednosti i vrsimo estimaciju tacnosti modela kao prosecne vrednost tacnosti sracunate unakrsnom validacijom
+for (i in 1:9) {
+  # Ovi indeksi ukazuju na trenutni interval test seta koji koristimo za treniranje modela
+    indices <- (((i - 1) * round((1/9)*nrow(shuffled))) + 1):((i*round((1/9) * nrow(shuffled))))
+  
+   # Iskljucujemo ove intervale iz trening seta
+   train <- shuffled[-indices,]
+  
+  # Ukljucimo ih u test set
+  test <- shuffled[indices,]
+  
+  # Treniramo model sa svakim od dobijenih trening setova po iteracijama
+  tree <- rpart(survived ~ ., train, method = "class")
+  
+  # Predvidjamo klase za tekuci test set u svakoj od iteracija
+  pred <- predict(tree, test, type = "class")
+  
+  # Formiramo odgovarajucu konfuzionu matricu
+  conf <- table(test$survived, pred)
+  
+  # Dodeljujemo vrednost za tacnost tekuceg modela i-tom indeksu u vektoru accs
+  accs[i] <- sum(diag(conf))/sum(conf)
+}
+
+# Srednja vrednost za accs
+mean(accs)
+```
+
+**Pitanje:**
+Recimo da primenjujemo unakrsnu validaciju na skupu podataka koji sadrzi 22680 opservacija. Zelite da vas trening set sadrzi 21420 unosa (opservacija). Koliko iteracija moze da sadrzi kros-validacioni algoritam? 
+
+
+### Bajas i varijansa (Bias and Variance)
+
+#### Primer
+
+Koristicemo *Spambase Data Set* koji mozete naci na <https://archive.ics.uci.edu/ml/datasets/Spambase>
+
+
+```{r}
+
+if (!"emails_full" %in% ls()) {
+    emails_full <- read.csv("data/spambase.data", header = FALSE)
+}
+
+# Proveravamo strukturu seta podataka
+str(emails_full)
+
+# Na osnovu dokumentacije...
+
+emails_full <- emails_full[, c(55, 58)]
+
+str(emails_full)
+
+colnames(emails_full) <-  c("avg_capital_seq", "spam")
+
+str(emails_full)
+
+emails_full$spam <- as.factor(emails_full$spam)
+
+str(emails_full)
+
+# Definisemo funkciju spam_classifier()
+# 1 - spam, 0 - ham
+spam_classifier <- function(x){
+  prediction <- rep(NA,length(x))
+  prediction[x > 4] <- 1
+  prediction[x >= 3 & x <= 4] <- 0
+  prediction[x >= 2.2 & x < 3] <- 1
+  prediction[x >= 1.4 & x < 2.2] <- 0
+  prediction[x > 1.25 & x < 1.4] <- 1
+  prediction[x <= 1.25] <- 0
+  return(factor(prediction, levels = c("0","1")))
+}
+
+# Primenimo spam_classifier na emails_full: pred_full
+pred_full <- spam_classifier(emails_full$avg_capital_seq)
+
+# Konfuziona matrica za emails_full: conf_full
+conf_full <- table(emails_full$spam, pred_full)
+
+# Racunamo tacnost na osnovu conf_full: acc_full
+acc_full <- sum(diag(conf_full))/sum(conf_full)
+acc_full
+
+# Uproscen model za klasifikaciju 
+spam_classifier <- function(x){
+  prediction <- rep(NA,length(x))
+  prediction[x > 4] <- 1
+  prediction[x <= 4] <- 0
+  return(factor(prediction, levels = c("0","1")))
+}
+
+# Tacnost predikcije sa uproscenim modelom za emails data set
+conf_small <- table(emails$spam, spam_classifier(emails$avg_capital_seq))
+acc_small <- sum(diag(conf_small)) / sum(conf_small)
+acc_small
+
+# Primenimo uprosceni model i na "emails_full" i sracunamo konfuzionu matricu
+conf_full <- table(emails_full$spam, spam_classifier(emails_full$avg_capital_seq))
+
+# Izracunamo tacnost
+acc_full <- sum(diag(conf_full)) / sum(conf_full)
+acc_full
+```
+
+## Linearna regresija
+
+- "Jednostavan" pristup problemu "nadgledanog" ucenja.
+- **Osnovna prepostavka:** Zavisno promenljiva $Y$ se moze izracunati kao linearna funkcija nezavisno promenljivih $X_1, X_2, ..., X_p$.
+- Literatura: [Regression Models for Data Science in R]( http://leanpub.com/regmods)
+
+### Prosta linearna regresija
+
+#### Koriscenje funkcije `lm()` - Primeri
+
+**Primer 1:**
+
+U ovom primeru cemo koristiti set podataka "Boston" iz paketa `MASS`. Ovaj set podataka sadrzi podatke o trzisnoj vrednosti nekretnina u predgradjima Bostona, SAD, zajedno sa razlicitim parametrima koji uticu na formiranje ove vrednosti.
+```{r}
+library(MASS)
+library(ISLR)
+library(ggplot2)
+
+?Boston
+str(Boston)
+head(Boston)
+
+# Proverimo kako izgleda promena "medv" (median value of owner-occupied homes in \$1000s) sa
+# "lstat" (lower status of the population (percent)
+plot(medv~lstat,Boston)
+
+# Kao sto vidimo postoji jasan trend opadanja vrednosti nekretnina sa porastom procenta
+# siromasnijih stanovnika (ovakva korelacija je naravno i ocekivana). Ovakvi slucajevi su dobri
+# kandidati za modelovanje prostom linerarnom regresijom.
+
+fit_1 = lm(medv ~ lstat, data = Boston)
+
+# Hajde da vidimo kako izgleda nas model
+fit_1
+
+# Detaljniji uvid
+summary(fit_1)
+
+# Sta sve model sadrzi
+names(fit_1)
+
+# Samo koeficijenti
+fit_1$coefficients
+
+# Ucrtajmo regresionu pravu na pocetni scatter plot
+abline(fit_1$coefficients, col = "red", lwd = 2)
+
+# Ili sve zajedno koristerci "ggplot2"
+ggplot(Boston, aes( x = lstat, y = medv)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE, colour = "red")
+
+# Ako zelimo i interval pouzdanosti sam izostavimo parametar "se" (podrazumevano se = TRUE)
+ggplot(Boston, aes( x = lstat, y = medv)) +
+    geom_point() +
+    geom_smooth(method = "lm")
+
+
+# Interval pouzdanosti
+confint(fit_1)
+
+# Da predvidimo vrednosti "medv" za dati vektor vrednosti "lstat" promenljive, uz
+# proracun intervala pouzdanosti
+predict(fit_1,data.frame(lstat = c(5,10,15)),interval = "confidence")
+
+```
+
+### Multivarijabilna linearna regresija
+
+#### Primer 1
+
+```{r}
+library(readr)
+library(tidyr)
+library(purrr)
+library(ggpubr)
+
+# Uvoz i sredjivanje podataka
+shop_data <- read_csv("data/shop_data.csv") 
+shop_data <- separate(shop_data, '"sales","sq_ft","inv","ads","size_dist","comp"', 
+                      c("sales","sq_ft","inv","ads","size_dist","comp"), sep = ",")
+shop_data <- as.data.frame(map(shop_data, as.numeric))
+
+str(shop_data)
+head(shop_data)
+
+# Hajde da proverimo kako se podaci ponasaju i mogu li se uociti relacije
+# izmedju distribucija promenljivih koje bi ukazivale na opravdanost uvodjenja
+# linearnog modela:
+
+par(mfrow = c(2,3))
+plot(sales ~ ads, shop_data)
+plot(sales ~ sq_ft, shop_data)
+plot(sales ~ size_dist, shop_data)
+plot(sales ~ inv, shop_data)
+plot(sales ~ comp, shop_data)
+
+#Ili:
+pairs(shop_data)
+
+# Linearni model za "sales" koji ukjucuje sve prediktore (sve preostale promenljive)
+lm_shop_1 <- lm( sales ~., data = shop_data)
+
+# Proverimo parametre valjanosti modela i koliko su pojedini prediktori znacajni u modelu:
+summary(lm_shop_1)
+
+# Da bismo uopste mogli da koristimo p-vrednosti u ovom kontekstu treba prvo da proverimo 
+# da li je zadovoljena pretpostavka o normalnoj distribuciji reziduala!
+
+par(mfrow = c(1,2))
+# Plotujemo reziduale u funkciji fitovanih vrednosti za pojedinacje opservacije
+plot(lm_shop_1$fitted.values, lm_shop_1$residuals)
+abline(0,0, col = "red", lty = 2)
+
+# Napravimo  Q-Q plot kvantila reziduala
+qqnorm(lm_shop_1$residuals, ylab = "Residual Quantiles")
+qqline(lm_shop_1$residuals, col = "red")
+
+par(mfrow = c(1,1))
+
+# Mozemo i da upotrebimo f-ju "ggqqplot" iz paketa "ggpubr" koji sadrzi funkcije za 
+# plotovanje "lepih" grafika:
+
+ggqqplot(lm_shop_1$residuals, ylab = "Residual Quantiles")
+
+# Me moze se uociti nikakav jasan "pattern" u distribucij reziduala, sta vise kvantili 
+# reziduala su uglavnom na liniji koja odgovara teorijskoj - normalnoj distribuciji 
+
+# Proverimo ponovo summary
+summary(lm_shop_1)
+
+# Iskoristimo sada dobijeni model da predvidimo neto prodajnu vrednost na osnovu novog
+# skupa prediktora:
+shop_new = data.frame("sq_ft" = 2.3, "inv" = 420, "ads" = 8.7, 
+                      "size_dist" = 9.1, "comp" = 10)
+predict(lm_shop_1, shop_new)
+
+```
+#### Primer 2
+
+Za ovaj primer cemo ponovo koristiti set podataka "Boston" iz paketa `MASS`.
+```{r}
+# Linearni model za "medv" na osnovu dva prediktora: "lstat" i "age"
+fit2 = lm(medv ~ lstat + age, data = Boston)
+summary(fit2)
+
+#Linearni model za "medv" na osnovu svih raspolozivih prediktora
+fit3 = lm(medv ~.,Boston)
+summary(fit3)
+
+# Jos jedan nacin da se iscraju grafici koji se koriste za procenu valjanosti i opravdanosti linearnog modela
+par(mfrow = c(2,2))
+plot(fit3)
+
+# Na osnovu "summary" za model fit3 videli smo da promenljive "indus" i "age" ne igraju bitnu ulogu, te cemo update-vati model tako da ih ne uzima u obzir: 
+fit4 = update(fit3,~.-age-indus)
+summary(fit4)
+
+```
+
+## Nelinearna regresija
+
+### Polinomijalna regresija
+- Ovaj segment ce biti dopunjen u buducnosti
+
+### KNN (K-Nearest Neighbors) u regresionoj analizi
+- Ovaj segment ce biti dopunjen u buducnosti 
+
+### Stablo odlucivanja (Decision Tree), Random Forest i Boosting za regresiju
+#### Uvod
+- Ovaj segment ce biti dopunjen u buducnosti
+
+
+## Klasifikacija
+
+- Za razliku od regresionog modela, koji koristimo kako bismo predvideli neku vrednost iz kontiunualnog skupa brojnih vrednosti, klasifikacioni model odn. algoritam koristimo da predvidimo klasu odn., uslovno receno, vrednost iz nekog diskretnog skupa tj. kategoricku promenljivu.
+- Ne primer: **objekat_na_slici $\in$ {"automobil", "bicikl", "avion"}** ili **email $\in$ {"spam", "ham"}**
+- U ovom slucaju nas zadatak je da na osnovu vektora prediktora $X$ i vektora odziva $Y$ koji sadrzi kvalitativne tj. kategoricke vrednosti iz skupa $C$ generisemo funkciju $C(X)$ (trening, odn. ucenje algoritma) koja kao ulaz prima novi (onaj koji nije koriscen u treningu) vektor prediktora $X$ a kao odziv daje vrednosti (vrsi predvidjanje) za $Y$, $C(X) \in C$.
+- Neretko nas interesuje procena verovatnoce da $X$ pripada nekoj od kategorija iz $C$.
+
+### Logisticka regresija
+
+*Bice dodato naknadno.*
+
+### Stablo odlucivanja - Decision Tree
+
+- Metode ovog tipa pocivaju na principima stratifikacije i segmentacije prediktorskog hiperprostora u veci broj manjih, prostih, regiona.
+- Istorijski gledano prva dva algoritma ovog tipa su: 
+    - **CART** (Classification And Regression Tree),  Leo Breiman et al.
+    - **ID3** (Iterative Dichotomiser 3), Ross Quinlan
+- Stablo odlucivanja je algoritam jednostavan za upotrebu i interpretaciju rezultata, medjutim sklon je overfit-ovanju i uglavnom ne postize tacnost uporedivu sa nekim modernijim algoritmima.
+- Metode kao sto su *bagging, random forest i boosting* koje se baziraju na iterativnoj agregaciji pojedinacnih stabala odlucivanja obezbedjuju znacajno bolje performanse ali po cenu interpretabilnosti rezultata.
+- Objasnicemo primenu stabla odlucivanja za klasifikaciju na primeru, koristeci dobro poznati `titanic` set podataka koji smo, prethodno, vec uvezli i adekvatno modifikovali za potrebe nase analize i modelovanja.
+- DataCamp-ov tutorial: [Kaggle R Tutorial on Machine Learning](https://www.datacamp.com/community/open-courses/kaggle-tutorial-on-machine-learing-the-sinking-of-the-titanic?utm_campaign=kaggle-ml-launch&utm_medium=blog&utm_source=kaggle-ml-launch#gs.KhzfU64)
+
+```{r}
+
+# Ucitajmo prvo pakete koji ce biti korisceni u ovom primeru
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+
+
+# Da se podsetimo kako izgleda skup podataka koji cemo koristiti u ovom
+# primeru:
+str(titanic)
+
+# Odnos broja prezivelih i poginulih: "0" - nije preziveo/la; "1" - preziveo/la
+table(titanic$survived)
+prop.table(table(titanic$survived))
+
+# Da obezbedimo reproduktibilnost
+set.seed(333)
+
+# Za potrebe ovog primera cemo na osnovu "titanic" data set-a formirati
+# "train" i "test" set podataka koje cemo, respektivno, koristiti za trening naseg 
+# klasifikacionog algoritma (Decision Tree) i njegovo testiranje. 
+# Podelu cemo izvrsiti tako da "train" set sadrzi 75% podataka, 
+# a "test" preostalih 25%. 
+train_ind <- sample(1:nrow(titanic), round(0.75*(nrow(titanic))))
+train <- titanic[train_ind, ]
+test <- titanic[-train_ind, ]
+
+# Proverimo da li "train" i "test" data set izgledaju kako bi trebalo
+str(train)
+str(test)
+
+# Proverimo da li je zastupljenost klasa u trening setu dobro reprezentovana, tj. 
+# da li se poklapa onom u polaznom setu podataka ("titanic").
+prop.table(table(train$survived))
+
+# Generisemo klasifikacioni model (drvo odlucivanja - decision tree) na osnovu datih podataka, tj. vrsimo trening naseg modela:
+tree <- rpart(survived ~ ., data = train, method = "class")
+
+# Hajde da vidimo kako nase stablo odlucivanja izgleda
+prp(tree)
+
+# Korisniji i lepsi dijagram
+fancyRpartPlot(tree)
+
+# Koristimo predict() funkciju da predvidimo klase na osnovu podataka iz 
+# "test" data set-a
+pred <- predict(tree, newdata = test, type = "class")
+
+# Provera tacnosti predvidjanaja na "test" setu
+# Konstruisemo konfuzionu matricu: conf
+conf <- table(test$survived, pred)
+
+# Racunamo tacnost
+sum(diag(conf))/sum(conf)
+
+```
+Kao sto se moze videti, procenjena tacnost ovako dobijenog modela, na test setu, je nesto preko 80%, sto se, u ovom konkretnom slucaju, smatra solidnim rezultatom.
+
+Demonstracije radi, u nastavku cemo pokazati kako se kontrolise kompleksnost modela podesavanjem parametra `cp`. Uprosceno receno, ovaj parametar odredjuje koji ce cvorovi (nodes) biti uklonjeni iz finalnog modela, jer ne doprinose, u dovoljnoj meri, razdvajanju klasa.
+Generalno govoreci, podrazumevano ponasanje `rpart` algoritma je u prilicnoj meri optimalno u pogledu odabira modela odgovarajuce kompleksnosti.
+Prilikom formiranja modela treba imati na umu da su kompleksniji modeli skloniji overfit-ovanju podataka! Ovo naravno ne znaci da prostiji model obavezno obezbedjuje bolju generalizaciju, tj. bolju klasifikaciju (sa vecom tacnoscu) podataka koji nisu korisceni tokom treninga.
+
+```{r}
+
+#Prvo cemo generisati nepotrebno kompleksan model
+complex_tree <- rpart(survived ~ ., train, method = "class", 
+                      control = rpart.control(cp = 0.00001))
+
+fancyRpartPlot(complex_tree)
+
+
+# Provera tacnosti predvidjanja na "trening" setu
+# Prvo vrsimo estimaciju klasa u training setu na osnovu modela "complex_tree"
+pred <- predict(complex_tree, train, type = "class")
+
+
+# Konstruisemo konfuzionu matricu: conf
+conf <- table(train$survived, pred)
+# Racunamo tacnost
+sum(diag(conf))/sum(conf)
+
+# Proverimo tacnost ovako dobijenog modela na test setu.
+# Prvo vrsimo estimaciju klasa u test setu na osnovu modela "complex_tree"
+pred <- predict(complex_tree, newdata = test, type = "class")
+
+# Provera tacnosti predvidjanaja na "test" setu
+# Konstruisemo konfuzionu matricu: conf
+conf <- table(test$survived, pred)
+
+# Racunamo tacnost
+sum(diag(conf))/sum(conf)
+
+# Sada cemo ovom slozenum drvetu "skresati" grane
+pruned <- prune(complex_tree, cp = 0.01)
+fancyRpartPlot(pruned)
+
+# Proverimo sada za model "pruned" kako stojimo sa tacnoscu
+# Provera tacnosti predvidjanja na "trening" setu
+# Prvo vrsimo estimaciju klasa u training setu na osnovu modela "pruned"
+pred <- predict(pruned, train, type = "class")
+
+
+# Konstruisemo konfuzionu matricu: conf
+conf <- table(train$survived, pred)
+# Racunamo tacnost
+sum(diag(conf))/sum(conf)
+
+# Proverimo tacnost ovako dobijenog modela na test setu.
+
+# Prvo vrsimo estimaciju klasa u test setu na osnovu modela "pruned"
+pred <- predict(pruned, newdata = test, type = "class")
+
+# Provera tacnosti predvidjanaja na "test" setu
+# Konstruisemo konfuzionu matricu: conf
+conf <- table(test$survived, pred)
+
+# Racunamo tacnost
+sum(diag(conf))/sum(conf)
+
+
+```
+
+Kao sto se moze videti, na osnovu rezultata, prostiji model obezbedjuje bolju generalizaciju. Na ovo ukazuje manja razlika u procenjenoj tacnosti klasifikacije na *test* i *trening* setu podataka.
+
+### Jos o proceni valjanosti modela za binarnu klasifikaciju: ROC (Receiver Operator Characteristic) krive
+
+- Izuzetno mocan alat za procenu perfomansi binarnog klasifikatora
+- Receiver Operator Characteristic Curve - ROCC
+- Graficki prikaz promene odnosa True Positive Rate (Recall) vs False Positive Rate,
+sa promenom vrednosnog praga (treshold) za verovatnocu na osnovu koga se odredjuje pripadanost jednoj od dve klase.
+- AUC (Area Under the Curve) > 0.9 - dobar klasifikator
+- R paketi koji se mogu koristiti za ROC analizu: "ROCR" i "pROC"
+
+####Primer 
+
+```{r}
+library(ROCR)
+
+# Generisanje ROC krive nam trebaju verovatnoce - type = "prob"
+probs <- predict(tree, test, type = "prob")[,2]
+
+# Generisemo "prediction" objeka: pred
+pred <- prediction(probs, test$survived)
+
+# Generisemo "performance" objekat: perf
+perf <- performance(pred, "tpr", "fpr")
+
+# Crtamo ROC krivu
+plot(perf)
+
+#Ili
+df <- data.frame(x = perf@x.values[[1]], y = perf@y.values[[1]])
+ggplot(df, aes(x,y)) +
+  geom_line(color = "steelblue") +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "darkred")
+
+# Hajde da vidimo kolika je tacno povrsina ispod krive - AUC
+# Ponovo generisemo adekvatan "performance"" objekat: perf
+perf <- performance(pred, "auc")
+
+# Ispisujemo vrednost za AUC
+perf@y.values[[1]]
+```
+
+
+
+
+
+### Random Forest
+
+Krajnje uprosceno, **Random Forest** algoritam radi po sledecem principu: generise se veliki broj razgranatih stabala odlucivanja, koja se zatim "uprosecuju" kako bi se smanjila varijansa i izbeglo over fit-ovanje. 
+
+#### Primer 1
+```{r}
+library(randomForest)
+
+
+# Da obezbedimo reproduktibilnost
+set.seed(333)
+
+# Za potrebe ovog primera cemo na osnovu "titanic" data set-a formirati
+# "train" i "test" set podataka koje cemo, respektivno, koristiti za trening naseg 
+# klasifikacionog algoritma (Decision Tree) i njegovo testiranje. 
+# Podelu cemo izvrsiti tako da "train" set sadrzi 75% podataka, 
+# a "test" preostalih 25%. 
+train_ind <- sample(1:nrow(titanic), round(0.75*(nrow(titanic))))
+train <- titanic[train_ind, ]
+test <- titanic[-train_ind, ]
+
+# Proverimo da li "train" i "test" data set izgledaju kako bi trebalo
+str(train)
+str(test)
+
+# Proverimo da li "train" i "test" sadrze NA vrednosti. Ako ih ima one se moraju ili 
+# imutirati na adekvatan nacin, ili se opservacije koje ih sadrze brisu, pre primene
+# "randomForest" funkcije.
+
+# Zamena NA vrednosti odgovarajucim brojnim vrdnostima upotrebom "rfImpute" funkcije.
+titanic_imputed <- rfImpute(survived ~ ., train)
+
+# "Treniranje" RF modela
+titanic_rf <- randomForest(survived ~ ., titanic_imputed, importance = TRUE, ntree = 1000)
+
+# Osnovni podaci o modelu
+titanic_rf
+
+# Vaznost pojedinacnih prediktora u izgradnju modela
+varImpPlot(titanic_rf)
+
+# Proverimo sada za model "titanic_rf" kako stojimo sa tacnoscu
+# Provera tacnosti predvidjanja na "trening" setu
+# Prvo vrsimo estimaciju klasa u training setu na osnovu modela "titanic_rf"
+pred <- predict(titanic_rf, train, type = "class")
+
+# Konstruisemo konfuzionu matricu: conf
+conf <- table(train$survived, pred)
+# Racunamo tacnost
+sum(diag(conf))/sum(conf)
+
+# Proverimo tacnost ovako dobijenog modela na test setu.
+
+# Prvo vrsimo estimaciju klasa u test setu na osnovu modela "titanic_rf"
+pred <- predict(titanic_rf, newdata = test, type = "class")
+
+# Provera tacnosti predvidjanaja na "test" setu
+# Konstruisemo konfuzionu matricu: conf
+conf <- table(test$survived, pred)
+
+# Racunamo tacnost
+sum(diag(conf))/sum(conf)
+
+```
+
+#### Primer 2
+
+Za ovaj primer cemo koristiti vec posnati set podataka "Boston" iz `MASS` paketa. Ovaj set podataka sadrzi podatke o trzisnoj vrednosti nekretnina u predgradjima Bostona, SAD, zajedno sa razlicitim parametrima koji uticu na formiranje ove vrednosti.
+Sa obzirom da nas interesuje problem klasifikacije za pocetak cemo prevesti numericku promenljivu "medv" u kategoricku promenljivu sa tri nivoa koje cemo oznaciti sa "cheap", "average", "expensive".
+Dakle za razliku od prethodnog slucaja binarne klasifikacije (dve klase) ovde cemo imati tri klase.
+
+```{r}
+
+summary(Boston)
+boxplot(Boston$medv)
+
+# Prevodimo "medv" u kategoricku promenljivu sa tri nivoa koje cemo oznaciti sa
+# "cheap", "average", "expensive".
+Boston$medv <- cut(Boston$medv, c(0,18,35,50), labels = c("cheap", "average", "expensive"))
+
+summary(Boston$medv)
+
+train <- sample(1:nrow(Boston), 300)
+
+rf_boston <-  randomForest( medv ~., data = Boston, subset = train, importance = TRUE)
+rf_boston
+
+# Koliko je koja od promenljivih bitna za tacnost klasifikacije? 
+importance(rf_boston)
+varImpPlot(rf_boston)
+
+```
+
+
+### Boosting
+
+Ponovo, krajnje uprosceno, **Boosting** algoritam generise veliki broj malih (plitkih) stabala odlucivanja koja se inkrementalno pridodaju u cilju povecanja tacnosti odn. boljeg razdvajanja klasa.
+
+U primeru koji sledi cemo koristiti paket **`gbm`** (Generalized Boosted Regression Models) i set podataka "Boston" koji je vec modifikovan na odgovarajuci nacin, za resavanje problema klasifikacije, u prethodnom primeru koji se odnosio na primenu "Random Forest" algoritma.
+
+#### Primer 
+
+```{r}
+library(gbm)
+
+# Trening modela
+boost_boston <- gbm(medv ~ ., 
+                    data = Boston[train,],
+                    n.trees = 5000,
+                    shrinkage = 0.01, 
+                    interaction.depth = 3)
+
+boost_boston
+
+# Koliko je koja od promenljivih bitna za tacnost klasifikacije?  
+summary(boost_boston)
+
+```
+
+### KNN (K-Nearest Neighbors) za klasifikaciju
+*Bice dodato naknadno.*
